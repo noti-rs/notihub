@@ -1,0 +1,5 @@
+/target
+.idea
+output.png
+src/utils.rs
+debug.log
