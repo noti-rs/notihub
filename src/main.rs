@@ -3,9 +3,8 @@ use hub::Hub;
 mod config;
 mod events;
 mod hub;
-mod module;
 mod modules;
-mod notifier;
+mod notification;
 mod utils;
 
 #[tokio::main]

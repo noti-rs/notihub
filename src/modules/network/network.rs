@@ -3,7 +3,7 @@ use futures_util::stream::StreamExt;
 use log::{debug, error};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{config::Config, events::SystemEvent, module::Module, utils::with_logs::WithLogs};
+use crate::{config::Config, events::SystemEvent, modules::Module, utils::with_logs::WithLogs};
 
 pub struct NetworkModule {
     sender: UnboundedSender<SystemEvent>,
@@ -115,6 +115,7 @@ impl NetworkModule {
                 NetworkStateMap::Activated => {
                     sender.send(SystemEvent::NetworkConnected {
                         ssid: "todo".to_string(),
+                        signal_strenght: 0, // TODO: signal_strenght
                     })?;
                 }
                 _ => {}

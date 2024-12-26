@@ -4,18 +4,17 @@ use std::ffi::OsStr;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_udev::{AsyncMonitorSocket, MonitorBuilder};
 
-use crate::{config::Config, events::SystemEvent, module::Module, utils::with_logs::WithLogs};
+use crate::{config::Config, events::SystemEvent, modules::Module, utils::with_logs::WithLogs};
 
 pub struct DeviceModule {
     sender: UnboundedSender<SystemEvent>,
 }
 
 impl Module for DeviceModule {
-    // type M = DeviceModule;
-
     fn init(&self, sender: UnboundedSender<SystemEvent>, config: &Config) -> anyhow::Result<()> {
         let mut module = DeviceModule { sender };
         module.with_logs(self.name(), "initializing", |m| m.configure(config))?;
+
         Ok(())
     }
 

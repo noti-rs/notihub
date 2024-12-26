@@ -1,33 +1,38 @@
+use std::time::Duration;
+
 use anyhow::Ok;
-use log::debug;
-use tokio::sync::mpsc::UnboundedSender;
+use log::{debug, warn};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::{
     config::{CommonConfig, Config},
     events::SystemEvent,
-    module::Module,
-    modules::{device::DeviceModule, network::NetworkModule, power_supply::PowerSupplyModule},
-    notifier::Notifier,
+    modules::{
+        device::{device::DeviceModule, notification::DeviceNotification},
+        network::{network::NetworkModule, notification::NetworkNotification},
+        power::{notification::PowerSupplyNotification, power_supply::PowerSupplyModule},
+        Module,
+    },
+    notification::NotificationBuilder,
 };
 
 pub struct Hub {
     config: Config, // TODO: config
     modules: Vec<Box<dyn Module>>,
     sender: UnboundedSender<SystemEvent>,
-    notifier: Notifier,
+    receiver: UnboundedReceiver<SystemEvent>,
 }
 
 impl Hub {
     pub fn init() -> anyhow::Result<Self> {
+        let (sender, receiver) = unbounded_channel();
         let config = Self::load_cfg()?;
-
-        let (notifier, sender) = Notifier::init()?;
 
         let mut hub = Self {
             config,
             modules: Vec::new(),
             sender,
-            notifier,
+            receiver,
         };
 
         hub.setup()?;
@@ -48,7 +53,36 @@ impl Hub {
     pub async fn run(&mut self) -> anyhow::Result<()> {
         self.start_modules().await?;
 
-        self.notifier.run().await
+        loop {
+            tokio::select! {
+                Some(event) = self.receiver.recv() => {
+                    if let Err(e) = self.handle_event(event).await {
+                        warn!("Failed to handle event: {}", e);
+                    }
+                }
+            };
+
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    async fn handle_event(&self, event: SystemEvent) -> anyhow::Result<()> {
+        match event {
+            SystemEvent::NetworkConnected {
+                ssid,
+                signal_strenght,
+            } => NetworkNotification {
+                ssid,
+                signal_strenght,
+            }
+            .show()?,
+            SystemEvent::PowerSupply { is_connected } => {
+                PowerSupplyNotification { is_connected }.show()?
+            }
+            SystemEvent::Device { action, name } => DeviceNotification { action, name }.show()?,
+        };
+
+        Ok(())
     }
 
     async fn start_modules(&self) -> anyhow::Result<()> {

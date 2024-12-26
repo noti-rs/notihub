@@ -3,15 +3,13 @@ use log::{debug, error};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_udev::{AsyncMonitorSocket, EventType, MonitorBuilder};
 
-use crate::{config::Config, events::SystemEvent, module::Module, utils::with_logs::WithLogs};
+use crate::{config::Config, events::SystemEvent, modules::Module, utils::with_logs::WithLogs};
 
 pub struct PowerSupplyModule {
     sender: UnboundedSender<SystemEvent>,
 }
 
 impl Module for PowerSupplyModule {
-    // type M = PowerSupplyModule;
-
     fn init(&self, sender: UnboundedSender<SystemEvent>, config: &Config) -> anyhow::Result<()> {
         let mut module = PowerSupplyModule { sender };
         module.with_logs(self.name(), "initializing", |m| m.configure(config))?;

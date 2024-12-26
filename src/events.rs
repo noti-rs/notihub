@@ -3,9 +3,12 @@ use tokio_udev::EventType;
 
 #[derive(Display)]
 pub enum SystemEvent {
+    #[display("{}, {}", ssid, signal_strenght)]
     NetworkConnected {
         ssid: String,
+        signal_strenght: u8,
     },
+
     PowerSupply {
         is_connected: bool,
     },
