@@ -6,9 +6,6 @@ pub enum SystemEvent {
     NetworkConnected {
         ssid: String,
     },
-    PowerLowBattery {
-        level: u8,
-    },
     PowerSupply {
         is_connected: bool,
     },

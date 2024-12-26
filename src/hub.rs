@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::Ok;
 use log::debug;
 use tokio::sync::mpsc::UnboundedSender;
@@ -14,28 +12,20 @@ use crate::{
 
 pub struct Hub {
     config: Config, // TODO: config
-    modules: Vec<HubModule>,
+    modules: Vec<Box<dyn Module>>,
     sender: UnboundedSender<SystemEvent>,
     notifier: Notifier,
 }
 
-enum HubModule {
-    Network(Arc<NetworkModule>),
-    PowerSupply(Arc<PowerSupplyModule>),
-    Device(Arc<DeviceModule>),
-}
-
 impl Hub {
     pub fn init() -> anyhow::Result<Self> {
-        let modules = vec![];
-
         let config = Self::load_cfg()?;
 
         let (notifier, sender) = Notifier::init()?;
 
         let mut hub = Self {
             config,
-            modules,
+            modules: Vec::new(),
             sender,
             notifier,
         };
@@ -63,18 +53,7 @@ impl Hub {
 
     async fn start_modules(&self) -> anyhow::Result<()> {
         for module in &self.modules {
-            match module {
-                HubModule::Network(module) => {
-                    module.clone().start()?;
-                }
-                HubModule::PowerSupply(module) => {
-                    module.clone().start()?;
-                }
-                HubModule::Device(module) => {
-                    module.clone().start()?;
-                }
-                _ => unreachable!(),
-            }
+            module.start()?;
         }
 
         Ok(())
@@ -82,42 +61,25 @@ impl Hub {
 
     fn setup(&mut self) -> anyhow::Result<()> {
         if self.config.network.enabled {
-            let module = NetworkModule::new(self.sender.clone());
-            self.register_module(HubModule::Network(Arc::new(module)));
+            self.register_module(Box::new(NetworkModule::new(self.sender.clone())));
         }
-
         if self.config.power_supply.enabled {
-            let module = PowerSupplyModule::new(self.sender.clone());
-            self.register_module(HubModule::PowerSupply(Arc::new(module)));
+            self.register_module(Box::new(PowerSupplyModule::new(self.sender.clone())));
         }
-
         if self.config.device.enabled {
-            let module = DeviceModule::new(self.sender.clone());
-            self.register_module(HubModule::Device(Arc::new(module)));
+            self.register_module(Box::new(DeviceModule::new(self.sender.clone())));
         }
-
-        // TODO: other modules
 
         self.init_modules()
     }
 
-    fn register_module(&mut self, module: HubModule) {
+    fn register_module(&mut self, module: Box<dyn Module>) {
         self.modules.push(module);
     }
 
     fn init_modules(&mut self) -> anyhow::Result<()> {
         for module in &self.modules {
-            match module {
-                HubModule::Network(module) => {
-                    module.init(self.sender.clone(), &self.config)?;
-                }
-                HubModule::PowerSupply(module) => {
-                    module.init(self.sender.clone(), &self.config)?;
-                }
-                HubModule::Device(module) => {
-                    module.init(self.sender.clone(), &self.config)?;
-                }
-            }
+            module.init(self.sender.clone(), &self.config)?;
         }
 
         Ok(())

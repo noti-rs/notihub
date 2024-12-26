@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use derive_more::derive::Display;
 use futures_util::stream::StreamExt;
 use log::{debug, error};
@@ -12,39 +10,38 @@ pub struct NetworkModule {
 }
 
 impl Module for NetworkModule {
-    type M = NetworkModule;
+    // type M = NetworkModule;
 
-    fn init(
-        &self,
-        sender: UnboundedSender<SystemEvent>,
-        config: &Config,
-    ) -> anyhow::Result<Self::M> {
+    fn init(&self, sender: UnboundedSender<SystemEvent>, config: &Config) -> anyhow::Result<()> {
         let mut module = NetworkModule { sender };
-        module.with_logs(Self::name(), "initializing", |m| m.configure(config))?;
+        module.with_logs(self.name(), "initializing", |m| m.configure(config))?;
 
-        Ok(module)
+        Ok(())
     }
 
-    fn start(self: Arc<Self>) -> anyhow::Result<()> {
-        let self_clone = self.clone();
+    fn start(&self) -> anyhow::Result<()> {
+        let sender = self.sender.clone();
 
-        tokio::spawn(async move {
-            debug!(target: "Hub", "starting {} module", Self::name());
-            if let Err(e) = self_clone.listen().await {
-                error!("Network module failed: {}", e);
-            }
+        debug!(target: "Hub", "starting {} module", self.name());
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async move {
+                if let Err(e) = Self::listen(sender).await {
+                    error!("Network module failed: {}", e);
+                }
+            });
         });
 
         Ok(())
     }
 
     fn configure(&mut self, _config: &Config) -> anyhow::Result<()> {
-        self.with_logs(Self::name(), "configuring", |_| {});
+        self.with_logs(self.name(), "configuring", |_| {});
 
         Ok(())
     }
 
-    fn name() -> &'static str {
+    fn name(&self) -> &'static str {
         "NetworkModule"
     }
 }
@@ -92,7 +89,42 @@ impl NetworkModule {
         Self { sender }
     }
 
-    async fn get_wireless_device_path(&self, conn: &zbus::Connection) -> anyhow::Result<String> {
+    pub async fn listen(sender: UnboundedSender<SystemEvent>) -> anyhow::Result<()> {
+        let conn = zbus::Connection::system().await?;
+
+        let device_path = Self::get_wireless_device_path(&conn).await?;
+
+        let device_proxy = DeviceProxy::builder(&conn)
+            .path(device_path)?
+            .build()
+            .await?;
+
+        let state = device_proxy.state().await?;
+        debug!(
+            "NetworkModule: Initial WIFI state: {}",
+            NetworkStateMap::from(state)
+        );
+
+        let mut stream = device_proxy.receive_state_changed().await;
+
+        while let Some(signal) = stream.next().await {
+            let state = signal.get().await?;
+            debug!("WIFI state changed to {}", state);
+
+            match NetworkStateMap::from(state) {
+                NetworkStateMap::Activated => {
+                    sender.send(SystemEvent::NetworkConnected {
+                        ssid: "todo".to_string(),
+                    })?;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn get_wireless_device_path(conn: &zbus::Connection) -> anyhow::Result<String> {
         let proxy = NetworkManagerProxy::new(conn).await?;
         let devices: Vec<zbus::zvariant::OwnedObjectPath> = proxy.get_all_devices().await?;
 
@@ -114,39 +146,6 @@ impl NetworkModule {
         }
 
         anyhow::bail!("No wireless device found")
-    }
-
-    pub async fn listen(&self) -> anyhow::Result<()> {
-        let conn = zbus::Connection::system().await?;
-
-        let device_path = self.get_wireless_device_path(&conn).await?;
-
-        let device_proxy = DeviceProxy::builder(&conn)
-            .path(device_path)?
-            .build()
-            .await?;
-
-        let state = device_proxy.state().await?;
-        debug!("Initial WiFi state: {}", NetworkStateMap::from(state));
-
-        let mut stream = device_proxy.receive_state_changed().await;
-        debug!("Listening for WiFi device state changes...");
-
-        while let Some(signal) = stream.next().await {
-            let state = signal.get().await?;
-            debug!("WiFi state changed to {}", state);
-
-            match NetworkStateMap::from(state) {
-                NetworkStateMap::Activated => {
-                    self.sender.send(SystemEvent::NetworkConnected {
-                        ssid: "todo".to_string(),
-                    })?;
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
     }
 }
 

@@ -1,9 +1,8 @@
 use futures_util::TryStreamExt;
 use log::{debug, error, trace};
 use std::ffi::OsStr;
-use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio_udev::{AsyncMonitorSocket, EventType, MonitorBuilder};
+use tokio_udev::{AsyncMonitorSocket, MonitorBuilder};
 
 use crate::{config::Config, events::SystemEvent, module::Module, utils::with_logs::WithLogs};
 
@@ -12,23 +11,19 @@ pub struct DeviceModule {
 }
 
 impl Module for DeviceModule {
-    type M = DeviceModule;
+    // type M = DeviceModule;
 
-    fn init(
-        &self,
-        sender: UnboundedSender<SystemEvent>,
-        config: &Config,
-    ) -> anyhow::Result<Self::M> {
+    fn init(&self, sender: UnboundedSender<SystemEvent>, config: &Config) -> anyhow::Result<()> {
         let mut module = DeviceModule { sender };
-        module.with_logs(Self::name(), "initializing", |m| m.configure(config))?;
-        Ok(module)
+        module.with_logs(self.name(), "initializing", |m| m.configure(config))?;
+        Ok(())
     }
 
-    fn start(self: Arc<Self>) -> anyhow::Result<()> {
+    fn start(&self) -> anyhow::Result<()> {
         let sender = self.sender.clone();
 
+        debug!(target: "Hub", "starting {} module", self.name());
         std::thread::spawn(move || {
-            debug!(target: "Hub", "starting {} module", Self::name());
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(async move {
                 if let Err(e) = Self::run_monitor(sender).await {
@@ -41,11 +36,11 @@ impl Module for DeviceModule {
     }
 
     fn configure(&mut self, _config: &Config) -> anyhow::Result<()> {
-        self.with_logs(Self::name(), "configuring", |_| {});
+        self.with_logs(self.name(), "configuring", |_| {});
         Ok(())
     }
 
-    fn name() -> &'static str {
+    fn name(&self) -> &'static str {
         "DeviceModule"
     }
 }
