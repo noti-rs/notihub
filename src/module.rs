@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::hub::{self, Config, SystemEvent};
+use crate::{config::Config, events::SystemEvent};
 
 pub trait Module: Send + Sync + Sized {
     type M: Module;

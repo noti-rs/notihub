@@ -5,11 +5,7 @@ use futures_util::stream::StreamExt;
 use log::{debug, error};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::{
-    hub::{self, Config, SystemEvent},
-    module::Module,
-    utils::with_logs::WithLogs,
-};
+use crate::{config::Config, events::SystemEvent, module::Module, utils::with_logs::WithLogs};
 
 pub struct NetworkModule {
     sender: UnboundedSender<SystemEvent>,
@@ -20,7 +16,7 @@ impl Module for NetworkModule {
 
     fn init(
         &self,
-        sender: UnboundedSender<hub::SystemEvent>,
+        sender: UnboundedSender<SystemEvent>,
         config: &Config,
     ) -> anyhow::Result<Self::M> {
         let mut module = NetworkModule { sender };
@@ -42,7 +38,7 @@ impl Module for NetworkModule {
         Ok(())
     }
 
-    fn configure(&mut self, config: &Config) -> anyhow::Result<()> {
+    fn configure(&mut self, _config: &Config) -> anyhow::Result<()> {
         self.with_logs(Self::name(), "configuring", |_| {});
 
         Ok(())

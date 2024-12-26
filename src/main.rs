@@ -1,8 +1,11 @@
 use hub::Hub;
 
+mod config;
+mod events;
 mod hub;
 mod module;
 mod modules;
+mod notifier;
 mod utils;
 
 #[tokio::main]

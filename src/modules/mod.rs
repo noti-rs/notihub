@@ -1,2 +1,3 @@
+pub mod device;
 pub mod network;
-pub mod power;
+pub mod power_supply;

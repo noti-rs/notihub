@@ -1,56 +1,43 @@
 use std::sync::Arc;
 
-use log::{debug, error};
-use notify_rust::Notification;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use anyhow::Ok;
+use log::debug;
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
+    config::{CommonConfig, Config},
+    events::SystemEvent,
     module::Module,
-    modules::{network::NetworkModule, power::PowerModule},
+    modules::{device::DeviceModule, network::NetworkModule, power_supply::PowerSupplyModule},
+    notifier::Notifier,
 };
-
-pub struct Config {
-    pub network: NetworkConfig,
-}
-
-pub struct NetworkConfig {
-    pub enabled: bool,
-}
 
 pub struct Hub {
     config: Config, // TODO: config
     modules: Vec<HubModule>,
     sender: UnboundedSender<SystemEvent>,
-    receiver: UnboundedReceiver<SystemEvent>,
+    notifier: Notifier,
 }
 
 enum HubModule {
     Network(Arc<NetworkModule>),
-    Power(Arc<PowerModule>),
-}
-
-pub enum SystemEvent {
-    NetworkConnected { ssid: String },
-    PowerLowBattery { level: u8 },
-    PowerCharging,
-    DeviceAdded { device_name: String },
+    PowerSupply(Arc<PowerSupplyModule>),
+    Device(Arc<DeviceModule>),
 }
 
 impl Hub {
     pub fn init() -> anyhow::Result<Self> {
-        let (sender, receiver) = unbounded_channel();
         let modules = vec![];
 
-        // TODO: config
-        let config = Config {
-            network: NetworkConfig { enabled: true },
-        };
+        let config = Self::load_cfg()?;
+
+        let (notifier, sender) = Notifier::init()?;
 
         let mut hub = Self {
             config,
             modules,
             sender,
-            receiver,
+            notifier,
         };
 
         hub.setup()?;
@@ -59,18 +46,19 @@ impl Hub {
         Ok(hub)
     }
 
+    fn load_cfg() -> anyhow::Result<Config> {
+        // TODO: config
+        Ok(Config {
+            network: CommonConfig { enabled: true },
+            power_supply: CommonConfig { enabled: true },
+            device: CommonConfig { enabled: true },
+        })
+    }
+
     pub async fn run(&mut self) -> anyhow::Result<()> {
         self.start_modules().await?;
 
-        loop {
-            tokio::select! {
-                Some(event) = self.receiver.recv() => {
-                    if let Err(e) = self.handle_event(event).await {
-                        error!("Failed to handle event: {}", e);
-                    }
-                }
-            };
-        }
+        self.notifier.run().await
     }
 
     async fn start_modules(&self) -> anyhow::Result<()> {
@@ -79,7 +67,10 @@ impl Hub {
                 HubModule::Network(module) => {
                     module.clone().start()?;
                 }
-                HubModule::Power(module) => {
+                HubModule::PowerSupply(module) => {
+                    module.clone().start()?;
+                }
+                HubModule::Device(module) => {
                     module.clone().start()?;
                 }
                 _ => unreachable!(),
@@ -93,6 +84,16 @@ impl Hub {
         if self.config.network.enabled {
             let module = NetworkModule::new(self.sender.clone());
             self.register_module(HubModule::Network(Arc::new(module)));
+        }
+
+        if self.config.power_supply.enabled {
+            let module = PowerSupplyModule::new(self.sender.clone());
+            self.register_module(HubModule::PowerSupply(Arc::new(module)));
+        }
+
+        if self.config.device.enabled {
+            let module = DeviceModule::new(self.sender.clone());
+            self.register_module(HubModule::Device(Arc::new(module)));
         }
 
         // TODO: other modules
@@ -110,25 +111,14 @@ impl Hub {
                 HubModule::Network(module) => {
                     module.init(self.sender.clone(), &self.config)?;
                 }
-                HubModule::Power(module) => {
+                HubModule::PowerSupply(module) => {
+                    module.init(self.sender.clone(), &self.config)?;
+                }
+                HubModule::Device(module) => {
                     module.init(self.sender.clone(), &self.config)?;
                 }
             }
         }
-
-        Ok(())
-    }
-
-    async fn handle_event(&self, event: SystemEvent) -> anyhow::Result<()> {
-        match event {
-            SystemEvent::NetworkConnected { ssid } => Notification::new()
-                .appname("network_module")
-                .image_path("/path/to/icon.svg")
-                .summary("Network")
-                .body(format!("Connected to {}", ssid).as_str())
-                .show()?,
-            _ => unimplemented!(),
-        };
 
         Ok(())
     }
