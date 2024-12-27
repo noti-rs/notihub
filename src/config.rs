@@ -1,9 +1,17 @@
 pub struct Config {
-    pub network: CommonConfig,
-    pub power_supply: CommonConfig,
-    pub device: CommonConfig,
+    pub network: NetworkConfig,
+    pub power_supply: PSConfig,
+    pub device: DeviceConfig,
 }
 
-pub struct CommonConfig {
+pub struct NetworkConfig {
+    pub enabled: bool,
+}
+
+pub struct PSConfig {
+    pub enabled: bool,
+}
+
+pub struct DeviceConfig {
     pub enabled: bool,
 }

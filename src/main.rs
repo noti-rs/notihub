@@ -1,16 +1,13 @@
 use hub::Hub;
 
 mod config;
-mod events;
 mod hub;
 mod modules;
-mod notification;
 mod utils;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     setup_logger();
-    Hub::init()?.run().await
+    Hub::init()?.run()
 }
 
 fn setup_logger() {

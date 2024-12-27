@@ -1,44 +1,41 @@
-use derive_more::derive::Display;
-use futures_util::stream::StreamExt;
-use log::{debug, error};
-use tokio::sync::mpsc::UnboundedSender;
+use std::thread::JoinHandle;
 
-use crate::{config::Config, events::SystemEvent, modules::Module, utils::with_logs::WithLogs};
+use derive_more::derive::Display;
+use futures_util::StreamExt;
+use log::debug;
+use notify_rust::Notification;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+
+use crate::{
+    config::NetworkConfig,
+    modules::Module,
+    utils::{make_notification::MakeNotification, with_logs::WithLogs},
+};
 
 pub struct NetworkModule {
-    sender: UnboundedSender<SystemEvent>,
+    receiver: UnboundedReceiver<u32>,
+    _thread: JoinHandle<anyhow::Result<()>>,
 }
 
 impl Module for NetworkModule {
-    // type M = NetworkModule;
+    fn poll(&mut self) -> anyhow::Result<Option<notify_rust::Notification>> {
+        let mut notification = None;
 
-    fn init(&self, sender: UnboundedSender<SystemEvent>, config: &Config) -> anyhow::Result<()> {
-        let mut module = NetworkModule { sender };
-        module.with_logs(self.name(), "initializing", |m| m.configure(config))?;
+        if let Ok(state) = self.receiver.try_recv() {
+            debug!("WIFI state changed to {}", state);
 
-        Ok(())
-    }
-
-    fn start(&self) -> anyhow::Result<()> {
-        let sender = self.sender.clone();
-
-        debug!(target: "Hub", "starting {} module", self.name());
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async move {
-                if let Err(e) = Self::listen(sender).await {
-                    error!("Network module failed: {}", e);
+            match NetworkStateMap::from(state) {
+                NetworkStateMap::Activated => {
+                    // TODO: signal_strenght
+                    let ssid = "todo".to_string();
+                    let signal_strength = 0;
+                    notification = (ssid, signal_strength).make_notification();
                 }
-            });
-        });
+                _ => {}
+            }
+        }
 
-        Ok(())
-    }
-
-    fn configure(&mut self, _config: &Config) -> anyhow::Result<()> {
-        self.with_logs(self.name(), "configuring", |_| {});
-
-        Ok(())
+        Ok(notification)
     }
 
     fn name(&self) -> &'static str {
@@ -85,17 +82,32 @@ impl From<u32> for NetworkStateMap {
 }
 
 impl NetworkModule {
-    pub fn new(sender: UnboundedSender<SystemEvent>) -> Self {
-        Self { sender }
+    const NAME: &str = "NetworkModule";
+
+    pub fn create(config: &NetworkConfig) -> anyhow::Result<Self> {
+        (|| Self::initialize(config)).with_logs(Self::NAME, "Initialization")
     }
 
-    pub async fn listen(sender: UnboundedSender<SystemEvent>) -> anyhow::Result<()> {
-        let conn = zbus::Connection::system().await?;
+    fn initialize(_config: &NetworkConfig) -> anyhow::Result<Self> {
+        let (sender, receiver) = unbounded_channel();
 
+        let thread = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread().build()?;
+            rt.block_on(Self::async_loop(sender))
+        });
+
+        Ok(Self {
+            receiver,
+            _thread: thread,
+        })
+    }
+
+    async fn async_loop(sender: UnboundedSender<u32>) -> anyhow::Result<()> {
+        let conn = zbus::Connection::system().await?;
         let device_path = Self::get_wireless_device_path(&conn).await?;
 
         let device_proxy = DeviceProxy::builder(&conn)
-            .path(device_path)?
+            .path(&*device_path)?
             .build()
             .await?;
 
@@ -109,23 +121,15 @@ impl NetworkModule {
 
         while let Some(signal) = stream.next().await {
             let state = signal.get().await?;
-            debug!("WIFI state changed to {}", state);
-
-            match NetworkStateMap::from(state) {
-                NetworkStateMap::Activated => {
-                    sender.send(SystemEvent::NetworkConnected {
-                        ssid: "todo".to_string(),
-                        signal_strenght: 0, // TODO: signal_strenght
-                    })?;
-                }
-                _ => {}
-            }
+            sender.send(state)?;
         }
 
         Ok(())
     }
 
     async fn get_wireless_device_path(conn: &zbus::Connection) -> anyhow::Result<String> {
+        const WIFI_DEVICE: u32 = 2;
+
         let proxy = NetworkManagerProxy::new(conn).await?;
         let devices: Vec<zbus::zvariant::OwnedObjectPath> = proxy.get_all_devices().await?;
 
@@ -139,9 +143,7 @@ impl NetworkModule {
             .await?;
 
             let device_type: u32 = device_proxy.get_property("DeviceType").await?;
-
-            // NOTE: 2 - device type for WiFi devices
-            if device_type == 2 {
+            if device_type == WIFI_DEVICE {
                 return Ok(device_path.to_string());
             }
         }
@@ -169,4 +171,18 @@ trait NetworkManager {
 trait Device {
     #[zbus(property)]
     fn state(&self) -> zbus::Result<u32>;
+}
+
+impl MakeNotification for (String, usize) {
+    fn make_notification(self) -> Option<notify_rust::Notification> {
+        let (ssid, _signal_strength) = self;
+
+        Some(
+            Notification::new()
+                .appname("network_module")
+                .summary("Network")
+                .body(format!("Connected to {}", ssid).as_str())
+                .finalize(),
+        )
+    }
 }
