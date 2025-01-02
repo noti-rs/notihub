@@ -3,6 +3,7 @@ use hub::Hub;
 mod config;
 mod hub;
 mod modules;
+mod notification;
 mod utils;
 
 fn main() -> anyhow::Result<()> {
@@ -11,6 +12,6 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn setup_logger() {
-    const ENV_NAME: &str = "NOTIHUB_LOG";
+    const ENV_NAME: &str = "NOTI_LOG";
     env_logger::Builder::from_env(env_logger::Env::default().filter_or(ENV_NAME, "info")).init();
 }

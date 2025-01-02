@@ -1,19 +1,36 @@
-use std::thread::JoinHandle;
+use crate::notification::{ComposeNotification, NotificationData};
+use crate::{config::NetworkConfig, modules::Module, utils::with_logs::WithLogs};
 
 use derive_more::derive::Display;
 use futures_util::StreamExt;
 use log::debug;
-use notify_rust::Notification;
+use std::thread::JoinHandle;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
-use crate::{
-    config::NetworkConfig,
-    modules::Module,
-    utils::{make_notification::MakeNotification, with_logs::WithLogs},
-};
+#[zbus::proxy(
+    interface = "org.freedesktop.NetworkManager",
+    default_service = "org.freedesktop.NetworkManager",
+    default_path = "/org/freedesktop/NetworkManager"
+)]
+trait NetworkManager {
+    #[zbus(property)]
+    fn state(&self) -> zbus::Result<u32>;
+
+    fn get_all_devices(&self) -> zbus::Result<Vec<zbus::zvariant::OwnedObjectPath>>;
+}
+
+#[zbus::proxy(
+    interface = "org.freedesktop.NetworkManager.Device",
+    default_service = "org.freedesktop.NetworkManager"
+)]
+trait Device {
+    #[zbus(property)]
+    fn state(&self) -> zbus::Result<u32>;
+}
 
 pub struct NetworkModule {
     receiver: UnboundedReceiver<u32>,
+    config: NetworkConfig,
     _thread: JoinHandle<anyhow::Result<()>>,
 }
 
@@ -29,7 +46,15 @@ impl Module for NetworkModule {
                     // TODO: signal_strenght
                     let ssid = "todo".to_string();
                     let signal_strength = 0;
-                    notification = (ssid, signal_strength).make_notification();
+                    if let Some(wifi_config) = self.config.wifi.as_ref() {
+                        if let Some(connected_config) = wifi_config.connected.as_ref() {
+                            notification =
+                                connected_config.compose_notification(NotificationData::Network {
+                                    ssid,
+                                    signal_strength,
+                                });
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -39,7 +64,7 @@ impl Module for NetworkModule {
     }
 
     fn name(&self) -> &'static str {
-        "NetworkModule"
+        Self::NAME
     }
 }
 
@@ -84,11 +109,11 @@ impl From<u32> for NetworkStateMap {
 impl NetworkModule {
     const NAME: &str = "NetworkModule";
 
-    pub fn create(config: &NetworkConfig) -> anyhow::Result<Self> {
-        (|| Self::initialize(config)).with_logs(Self::NAME, "Initialization")
+    pub fn create(config: NetworkConfig) -> anyhow::Result<Self> {
+        (|| Self::init(config)).with_logs(Self::NAME, "Initialization")
     }
 
-    fn initialize(_config: &NetworkConfig) -> anyhow::Result<Self> {
+    fn init(config: NetworkConfig) -> anyhow::Result<Self> {
         let (sender, receiver) = unbounded_channel();
 
         let thread = std::thread::spawn(move || {
@@ -98,6 +123,7 @@ impl NetworkModule {
 
         Ok(Self {
             receiver,
+            config,
             _thread: thread,
         })
     }
@@ -149,40 +175,5 @@ impl NetworkModule {
         }
 
         anyhow::bail!("No wireless device found")
-    }
-}
-
-#[zbus::proxy(
-    interface = "org.freedesktop.NetworkManager",
-    default_service = "org.freedesktop.NetworkManager",
-    default_path = "/org/freedesktop/NetworkManager"
-)]
-trait NetworkManager {
-    #[zbus(property)]
-    fn state(&self) -> zbus::Result<u32>;
-
-    fn get_all_devices(&self) -> zbus::Result<Vec<zbus::zvariant::OwnedObjectPath>>;
-}
-
-#[zbus::proxy(
-    interface = "org.freedesktop.NetworkManager.Device",
-    default_service = "org.freedesktop.NetworkManager"
-)]
-trait Device {
-    #[zbus(property)]
-    fn state(&self) -> zbus::Result<u32>;
-}
-
-impl MakeNotification for (String, usize) {
-    fn make_notification(self) -> Option<notify_rust::Notification> {
-        let (ssid, _signal_strength) = self;
-
-        Some(
-            Notification::new()
-                .appname("network_module")
-                .summary("Network")
-                .body(format!("Connected to {}", ssid).as_str())
-                .finalize(),
-        )
     }
 }

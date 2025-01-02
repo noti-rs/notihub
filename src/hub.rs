@@ -1,11 +1,8 @@
 use std::time::Duration;
 
-use log::{debug, error};
+use log::{debug, warn};
 
-use crate::{
-    config::{Config, DeviceConfig, NetworkConfig, PSConfig},
-    modules::Module,
-};
+use crate::{config::Config, modules::Module};
 
 pub struct Hub {
     config: Config, // TODO: config
@@ -29,20 +26,17 @@ impl Hub {
 
     fn load_cfg() -> anyhow::Result<Config> {
         // TODO: config
-        Ok(Config {
-            network: NetworkConfig { enabled: true },
-            power_supply: PSConfig { enabled: true },
-            device: DeviceConfig { enabled: true },
-        })
+        Ok(Default::default())
     }
 
     pub fn run(&mut self) -> anyhow::Result<()> {
         loop {
             for module in self.modules.iter_mut() {
-                //TODO: proper handle Err here
                 if let Ok(Some(notification)) = module.poll() {
                     notification.show()?;
                 }
+
+                //TODO: error handling
                 // if let Err(e) = self.handle_event(event).await {
                 //     warn!("Failed to handle event: {}", e);
                 // }
@@ -58,12 +52,13 @@ impl Hub {
                 $(
                     match <Box<dyn Module>>::try_from(&self.config.$module) {
                         Ok(module) => self.register_module(module),
-                        Err(err) => error!("Failed to load module. Error: {err}"),
+                        Err(err) => warn!("Failed to load module: {err}"),
                     }
                 )*
             };
         }
-        register_modules!(network, power_supply, device);
+        register_modules!(network, power, device);
+
         Ok(())
     }
 

@@ -1,14 +1,13 @@
-use anyhow::bail;
+pub mod device;
+pub mod network;
+pub mod power;
+
+use crate::config::{DeviceConfig, NetworkConfig, PowerConfig};
+
 use device::DeviceModule;
 use network::NetworkModule;
 use notify_rust::Notification;
-use power_supply::PowerSupplyModule;
-
-use crate::config::{DeviceConfig, NetworkConfig, PSConfig};
-
-pub mod device;
-pub mod network;
-pub mod power_supply;
+use power::PowerModule;
 
 pub trait Module {
     fn name(&self) -> &'static str;
@@ -18,35 +17,29 @@ pub trait Module {
 impl TryFrom<&NetworkConfig> for Box<dyn Module> {
     type Error = anyhow::Error;
 
-    fn try_from(value: &NetworkConfig) -> Result<Self, Self::Error> {
-        if !value.enabled {
-            bail!("Network disabled");
-        }
+    // TODO: return info about disabled submodules
 
-        Ok(NetworkModule::create(value).map(Box::new)?)
+    fn try_from(value: &NetworkConfig) -> Result<Self, Self::Error> {
+        Ok(NetworkModule::create(value.clone()).map(Box::new)?)
     }
 }
 
-impl TryFrom<&PSConfig> for Box<dyn Module> {
+impl TryFrom<&PowerConfig> for Box<dyn Module> {
     type Error = anyhow::Error;
 
-    fn try_from(value: &PSConfig) -> Result<Self, Self::Error> {
-        if !value.enabled {
-            bail!("Power Supply disabled");
-        }
+    // TODO: return info about disabled submodules
 
-        Ok(PowerSupplyModule::create(value).map(Box::new)?)
+    fn try_from(value: &PowerConfig) -> Result<Self, Self::Error> {
+        Ok(PowerModule::create(value.clone()).map(Box::new)?)
     }
 }
 
 impl TryFrom<&DeviceConfig> for Box<dyn Module> {
     type Error = anyhow::Error;
 
-    fn try_from(value: &DeviceConfig) -> Result<Self, Self::Error> {
-        if !value.enabled {
-            bail!("Device disabled");
-        }
+    // TODO: return info about disabled submodules
 
-        Ok(DeviceModule::create(value).map(Box::new)?)
+    fn try_from(value: &DeviceConfig) -> Result<Self, Self::Error> {
+        Ok(DeviceModule::create(value.clone()).map(Box::new)?)
     }
 }
