@@ -1,6 +1,9 @@
 use notify_rust::Notification;
 
-use crate::config::EventConfig;
+use crate::{
+    config::EventConfig,
+    modules::{device::DeviceModule, network::NetworkModule, power::PowerModule},
+};
 
 pub enum NotificationData {
     Network { ssid: String, signal_strength: u8 },
@@ -71,9 +74,9 @@ fn replace_template_variables(template: &str, event_data: &NotificationData) -> 
 
 fn get_app_name(event_data: &NotificationData) -> &str {
     match event_data {
-        NotificationData::Network { .. } => "network_module",
-        NotificationData::Power { .. } => "power_module",
-        NotificationData::Device { .. } => "device_module",
+        NotificationData::Network { .. } => NetworkModule::NAME,
+        NotificationData::Power { .. } => PowerModule::NAME,
+        NotificationData::Device { .. } => DeviceModule::NAME,
         NotificationData::Custom { name, .. } => name,
     }
 }

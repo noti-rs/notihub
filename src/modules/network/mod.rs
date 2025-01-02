@@ -107,7 +107,7 @@ impl From<u32> for NetworkStateMap {
 }
 
 impl NetworkModule {
-    const NAME: &str = "NetworkModule";
+    pub const NAME: &str = "NetworkModule";
 
     pub fn create(config: NetworkConfig) -> anyhow::Result<Self> {
         (|| Self::init(config)).with_logs(Self::NAME, "Initialization")

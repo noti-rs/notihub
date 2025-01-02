@@ -38,7 +38,7 @@ impl Module for DeviceModule {
 }
 
 impl DeviceModule {
-    const NAME: &'static str = "DeviceModule";
+    pub const NAME: &'static str = "DeviceModule";
 
     pub fn create(config: DeviceConfig) -> anyhow::Result<Self> {
         (|| Self::initialize(config)).with_logs(Self::NAME, "Initialization")

@@ -43,7 +43,7 @@ impl Module for PowerModule {
 }
 
 impl PowerModule {
-    const NAME: &str = "PowerSupplyModule";
+    pub const NAME: &str = "PowerModule";
 
     pub fn create(config: PowerConfig) -> anyhow::Result<Self> {
         (|| Self::initialize(config)).with_logs(Self::NAME, "Initialization")
@@ -57,4 +57,3 @@ impl PowerModule {
         Ok(Self { monitor, config })
     }
 }
-
